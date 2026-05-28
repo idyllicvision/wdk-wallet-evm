@@ -17,6 +17,10 @@
  *
  * - `SeedSignerEvm`: derives accounts from a BIP-39 seed (BIP-44 path).
  * - `PrivateKeySignerEvm`: memory-safe wrapper around a raw private key.
+ * - `EvmSigner`: keychain-based HD signer via bare-universal-signer (iOS Keychain).
+ * - `PrivateKeyEvmSigner`: keychain-based private key signer via bare-universal-signer.
  */
 export { default, default as SeedSignerEvm } from './seed-signer-evm.js'
 export { default as PrivateKeySignerEvm } from './private-key-signer-evm.js'
+export { default as EvmSigner } from './evm-signer.js'
+export { default as PrivateKeyEvmSigner } from './keychain-private-key-signer-evm.js'
