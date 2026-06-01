@@ -28,101 +28,9 @@ import { getDefaultBareSigner } from '../bare-signer.js'
  */
 
 /**
- * Interface for EVM signers.
- * @interface
- */
-export class ISignerEvm {
-  /**
-   * True if the signer is currently active and usable.
-   * @type {boolean}
-   */
-  get isActive () {
-    throw new Error('isActive')
-  }
-
-  /**
-   * The last component index for the derivation path of this signer.
-   * @type {number|undefined}
-   */
-  get index () {
-    throw new Error('index')
-  }
-
-  /**
-   * The full derivation path if this is a child signer.
-   * @type {string|undefined}
-   */
-  get path () {
-    throw new Error('path')
-  }
-
-  /**
-   * The Ethereum address.
-   * @type {string|undefined}
-   */
-  get address () {
-    throw new Error('address')
-  }
-
-  /**
-   * Derive a child signer from this signer using a relative path.
-   * @param {string} relPath - Relative derivation path
-   * @param {object} [_cfg] - Configuration options
-   * @returns {ISignerEvm}
-   */
-  derive (relPath, _cfg) {
-    throw new Error('derive(relPath, cfg?)')
-  }
-
-  /**
-   * Get the Ethereum address.
-   * @returns {Promise<string>}
-   */
-  async getAddress () {
-    throw new Error('getAddress(message)')
-  }
-
-  /**
-   * Sign a plain message.
-   * @param {string} message - Message to sign
-   * @returns {Promise<string>}
-   */
-  async sign (message) {
-    throw new Error('sign(message)')
-  }
-
-  /**
-   * Sign a transaction object.
-   * @param {object} unsignedTx - Transaction object
-   * @returns {Promise<string>} Serialized signed transaction
-   */
-  async signTransaction (unsignedTx) {
-    throw new Error('signTransaction(unsignedTx)')
-  }
-
-  /**
-   * EIP-712 typed data signing.
-   * @param {object} domain - Domain separator
-   * @param {object} types - Type definitions
-   * @param {object} message - Message to sign
-   * @returns {Promise<string>}
-   */
-  async signTypedData (domain, types, message) {
-    throw new Error('signTypedData(domain, types, message)')
-  }
-
-  /**
-   * Clear any secret material from memory.
-   */
-  dispose () {
-    throw new Error('dispose()')
-  }
-}
-
-/**
  * EVM signer with EIP-191 and EIP-712 support.
  */
-export default class EvmSigner {
+export default class BareSeedSignerEvm {
   /**
    * Create a new EVM signer.
    * @param {EvmSignerConfig} [config={}] - Configuration options
@@ -152,12 +60,20 @@ export default class EvmSigner {
     }
   }
 
+  /** @private @throws {Error} if the signer has been disposed. */
+  _assertActive () {
+    if (!this._isActive) {
+      throw new Error('BareSeedSignerEvm: the signer has been disposed.')
+    }
+  }
+
   /**
    * Initialize the Ethereum address from the public key.
    * @private
    * @returns {Promise<string>}
    */
   async initializeAddress () {
+    this._assertActive()
     if (this._address) {
       return this._address
     }
@@ -173,6 +89,7 @@ export default class EvmSigner {
    * @returns {Promise<Uint8Array>}
    */
   async getPublicKey () {
+    this._assertActive()
     const pubkey = await this._bareSigner.getPublicKey({
       path: this._path,
       curve: 'secp256k1',
@@ -207,6 +124,7 @@ export default class EvmSigner {
    * @returns {Promise<string>}
    */
   async getAddress () {
+    this._assertActive()
     if (!this._address) {
       await this.initializeAddress()
     }
@@ -220,6 +138,7 @@ export default class EvmSigner {
    * @returns {EvmSigner} A new child signer with the derived path
    */
   derive (relPath, _cfg) {
+    this._assertActive()
     if (!relPath || typeof relPath !== 'string') {
       throw new Error('Invalid relative path: must be a non-empty string')
     }
@@ -231,7 +150,7 @@ export default class EvmSigner {
     // relPath comes as "0'/0/0" (account/change/index)
     const fullPath = `m/44'/60'/${relPath}`
 
-    const childSigner = new EvmSigner({
+    const childSigner = new BareSeedSignerEvm({
       bareSigner: this._bareSigner,
       path: fullPath,
       keychainOpts: this._opts,
@@ -247,6 +166,7 @@ export default class EvmSigner {
    * @returns {Promise<string>} Hex-encoded signature
    */
   async sign (message) {
+    this._assertActive()
     const messageHash = hashMessage(message)
     const hashBuffer = Buffer.from(messageHash.slice(2), 'hex')
     const sig = await this._bareSigner
@@ -266,6 +186,7 @@ export default class EvmSigner {
    * @returns {Promise<string>} Serialized signed transaction hex
    */
   async signTransaction (unsignedTx) {
+    this._assertActive()
     const tx = copyRequest(unsignedTx)
 
     const { to, from } = await resolveProperties({
@@ -330,6 +251,7 @@ export default class EvmSigner {
    * @returns {Promise<string>} Serialized signature
    */
   async signTypedData (domain, types, message) {
+    this._assertActive()
     const populated = await TypedDataEncoder.resolveNames(
       domain,
       types,
@@ -356,24 +278,41 @@ export default class EvmSigner {
 
     const typedDataHash = TypedDataEncoder.hash(populated.domain, types, populated.value)
     const hashBuffer = Buffer.from(typedDataHash.slice(2), 'hex')
-    const sig = await this._bareSigner
-      .sign({
-        path: this._path,
-        curve: 'secp256k1',
-        data: hashBuffer,
-        opts: this._opts
-      })
-      .then((sig) => Signature.from(Buffer.from(sig).toString('hex')))
+
+    const sigBytes = await this._bareSigner.sign({
+      path: this._path,
+      curve: 'secp256k1',
+      data: hashBuffer,
+      opts: this._opts
+    })
+
+    // @noble/curves secp256k1.sign() with format: 'recovered' returns 65 bytes: [recovery(1), r(32), s(32)]
+    if (sigBytes.length !== 65) {
+      throw new Error(`Invalid signature length: ${sigBytes.length}, expected 65`)
+    }
+
+    // recovery is already the yParity bit (0 or 1) per @noble/curves v2 spec
+    const recovery = sigBytes[0]
+    const r = '0x' + Buffer.from(sigBytes.slice(1, 33)).toString('hex')
+    const s = '0x' + Buffer.from(sigBytes.slice(33, 65)).toString('hex')
+
+    const sig = Signature.from({ r, s, yParity: recovery & 1 })
 
     return sig.serialized
   }
 
   /**
-   * Dispose of this signer and mark it inactive.
+   * Dispose of this signer and clear its cached state.
+   *
+   * Note: `_bareSigner` may be a shared singleton (see {@link getDefaultBareSigner}),
+   * so we drop our reference to it rather than disposing it here. The owner of the
+   * shared signer is responsible for its lifecycle.
    */
   dispose () {
     this._isActive = false
+    this._address = undefined
+    this._provider = undefined
+    this._opts = {}
+    this._bareSigner = undefined
   }
 }
-
-export { EvmSigner }

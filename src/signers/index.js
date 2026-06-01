@@ -22,5 +22,5 @@
  */
 export { default, default as SeedSignerEvm } from './seed-signer-evm.js'
 export { default as PrivateKeySignerEvm } from './private-key-signer-evm.js'
-export { default as EvmSigner } from './evm-signer.js'
-export { default as PrivateKeyEvmSigner } from './keychain-private-key-signer-evm.js'
+export { default as EvmSigner } from './bare-seed-signer-evm.js'
+export { default as PrivateKeyEvmSigner } from './bare-private-key-signer-evm.js'

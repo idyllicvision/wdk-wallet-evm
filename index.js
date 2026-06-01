@@ -31,6 +31,6 @@ export { default as WalletAccountReadOnlyEvm } from './src/wallet-account-read-o
 
 export { default as WalletAccountEvm } from './src/wallet-account-evm.js'
 
-export { default as EvmSigner, ISignerEvm } from './src/signers/evm-signer.js'
-export { default as PrivateKeyEvmSigner } from './src/signers/keychain-private-key-signer-evm.js'
+export { default as EvmSigner } from './src/signers/bare-seed-signer-evm.js'
+export { default as PrivateKeyEvmSigner } from './src/signers/bare-private-key-signer-evm.js'
 export { getDefaultBareSigner } from './src/bare-signer.js'

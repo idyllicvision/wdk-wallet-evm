@@ -18,7 +18,7 @@ import {
 import { Signer } from '@idyllicvision/bare-universal-signer'
 
 /**
- * @typedef {Object} PrivateKeySignerEvmConfig
+ * @typedef {Object} BarePrivateKeySignerEvmConfig
  * @property {import('@idyllicvision/bare-universal-signer').Signer} [bareSigner] - Pre-constructed Signer instance
  * @property {string} [rpcURL] - Optional RPC URL (ENS resolution only)
  * @property {Object} [keychainOpts={}] - Keychain opts forwarded to new Signer if bareSigner omitted
@@ -28,7 +28,7 @@ import { Signer } from '@idyllicvision/bare-universal-signer'
  * EVM signer backed by a raw private key stored in the iOS Keychain.
  * Compatible with ISignerEvm (wdk-wallet-evm). No HD derivation supported.
  */
-export default class PrivateKeySignerEvm {
+export default class BarePrivateKeySignerEvm {
   /**
    * @param {PrivateKeySignerEvmConfig} [config={}]
    */
@@ -37,6 +37,13 @@ export default class PrivateKeySignerEvm {
       new Signer({ secretType: 'privateKey', autoLockMs: 30000, opts: config.keychainOpts || {} })
     this._address = undefined
     this._isActive = true
+  }
+
+  /** @private @throws {Error} if the signer has been disposed. */
+  _assertActive () {
+    if (!this._isActive) {
+      throw new Error('PrivateKeySignerEvm: the signer has been disposed.')
+    }
   }
 
   get isPrivateKey () { return true }
@@ -52,6 +59,7 @@ export default class PrivateKeySignerEvm {
 
   /** @returns {Promise<string>} Checksummed Ethereum address */
   async getAddress () {
+    this._assertActive()
     if (!this._address) {
       const pubkey = await this._bareSigner.getPublicKey({ curve: 'secp256k1' })
       this._address = computeAddress('0x' + Buffer.from(pubkey).toString('hex'))
@@ -65,6 +73,7 @@ export default class PrivateKeySignerEvm {
    * @returns {Promise<string>} 130-char lowercase hex (65 bytes: recovery||r||s)
    */
   async sign (message) {
+    this._assertActive()
     const messageHash = hashMessage(message)
     const hashBuffer = Buffer.from(messageHash.slice(2), 'hex')
     const sig = await this._bareSigner.sign({ curve: 'secp256k1', data: hashBuffer })
@@ -77,6 +86,7 @@ export default class PrivateKeySignerEvm {
    * @returns {Promise<string>} Serialized signed transaction hex
    */
   async signTransaction (unsignedTx) {
+    this._assertActive()
     const tx = copyRequest(unsignedTx)
 
     const { to, from } = await resolveProperties({
@@ -130,13 +140,37 @@ export default class PrivateKeySignerEvm {
    * @returns {Promise<string>} Serialized signature
    */
   async signTypedData (domain, types, message) {
+    this._assertActive()
     const typedDataHash = TypedDataEncoder.hash(domain, types, message)
     const hashBuffer = Buffer.from(typedDataHash.slice(2), 'hex')
+    const expectedAddr = await this.getAddress()
+
     const sigBytes = await this._bareSigner.sign({ curve: 'secp256k1', data: hashBuffer })
+
+    if (sigBytes.length !== 65) {
+      throw new Error(`Invalid signature length: ${sigBytes.length}, expected 65`)
+    }
+
     const r = '0x' + Buffer.from(sigBytes.slice(1, 33)).toString('hex')
     const s = '0x' + Buffer.from(sigBytes.slice(33, 65)).toString('hex')
-    return Signature.from({ r, s, yParity: sigBytes[0] & 1 }).serialized
+
+    const sig = Signature.from({ r, s, yParity: sigBytes[0] & 1 })
+    const recoveredAddr = recoverAddress(typedDataHash, sig)
+    if (recoveredAddr.toLowerCase() !== expectedAddr.toLowerCase()) {
+      throw new Error(`Signature verification failed: recovered ${recoveredAddr}, expected ${expectedAddr}`)
+    }
+
+    return sig.serialized
   }
 
-  dispose () { this._isActive = false }
+  /**
+   * Disposes the signer: deactivates it (further signing throws), disposes the
+   * keychain Signer when this instance owns it, and clears cached state.
+   */
+  dispose () {
+    this._isActive = false
+    this._bareSigner = undefined
+    this._address = undefined
+    this._bareSigner = undefined
+  }
 }

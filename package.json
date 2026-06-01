@@ -80,5 +80,11 @@
       "bare.js",
       "tests/**/*.js"
     ]
+  },
+  "jest": {
+    "moduleNameMapper": {
+      "^bare-buffer$": "<rootDir>/tests/__shims__/bare-buffer.js",
+      "^@idyllicvision/bare-universal-signer$": "<rootDir>/tests/__shims__/bare-universal-signer.js"
+    }
   }
 }
