@@ -129,6 +129,22 @@ describe('BareSeedSignerEvm', () => {
     expect(verifyTypedData(domain, types, value, serialized)).toBe(bare.address)
   })
 
+  test('signTypedData rejects a signature that does not recover to the signer (M2 recover-and-verify)', async () => {
+    const real = createMockBareSigner()
+    const other = createMockBareSigner(OTHER_KEY)
+    const mismatched = {
+      getPublicKey: (...a) => real.getPublicKey(...a),
+      sign: (...a) => other.sign(...a)
+    }
+    const signer = new BareSeedSignerEvm({ bareSigner: mismatched })
+
+    const domain = { name: 'Test', version: '1', chainId: 1, verifyingContract: '0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC' }
+    const types = { Mail: [{ name: 'contents', type: 'string' }] }
+    await expect(signer.signTypedData(domain, types, { contents: 'hi' })).rejects.toThrow(
+      'Signature verification failed'
+    )
+  })
+
   test('dispose() deactivates the signer and clears the cached address', () => {
     const signer = newSigner()
     signer.dispose()

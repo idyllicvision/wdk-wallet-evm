@@ -162,8 +162,14 @@ export default class BareSeedSignerEvm {
 
   /**
    * Sign a message (EIP-191).
+   *
+   * NOTE: returns the raw bare-signer output as hex — `[recovery(1), r(32), s(32)]`
+   * (recovery-first, no `0x` prefix). This is NOT a standard ethers signature
+   * (`r‖s‖v`); do not pass it directly to ethers `verifyMessage`. Use
+   * `signTypedData` / `signTransaction` for ethers-style serialized signatures.
+   *
    * @param {string} message - Message to sign
-   * @returns {Promise<string>} Hex-encoded signature
+   * @returns {Promise<string>} 130-char hex of `[recovery, r, s]`.
    */
   async sign (message) {
     this._assertActive()
@@ -297,6 +303,14 @@ export default class BareSeedSignerEvm {
     const s = '0x' + Buffer.from(sigBytes.slice(33, 65)).toString('hex')
 
     const sig = Signature.from({ r, s, yParity: recovery & 1 })
+
+    // Verify the signature recovers to this signer (parity with signTransaction),
+    // so a wrong-key / malformed signature is never returned as valid.
+    const expectedAddr = await this.getAddress()
+    const recoveredAddr = recoverAddress(typedDataHash, sig)
+    if (recoveredAddr.toLowerCase() !== expectedAddr.toLowerCase()) {
+      throw new Error(`Signature verification failed: recovered ${recoveredAddr}, expected ${expectedAddr}`)
+    }
 
     return sig.serialized
   }

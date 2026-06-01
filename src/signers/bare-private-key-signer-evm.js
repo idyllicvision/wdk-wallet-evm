@@ -69,8 +69,14 @@ export default class BarePrivateKeySignerEvm {
 
   /**
    * Sign a message (EIP-191).
+   *
+   * NOTE: returns the raw bare-signer output — `[recovery(1), r(32), s(32)]` as
+   * hex (recovery-first, no `0x`). This is NOT a standard ethers signature
+   * (`r‖s‖v`); do not feed it to ethers `verifyMessage`. Use `signTypedData` /
+   * `signTransaction` for ethers-style serialized signatures.
+   *
    * @param {string} message
-   * @returns {Promise<string>} 130-char lowercase hex (65 bytes: recovery||r||s)
+   * @returns {Promise<string>} 130-char lowercase hex of `[recovery, r, s]`.
    */
   async sign (message) {
     this._assertActive()
