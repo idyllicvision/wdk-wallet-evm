@@ -30,3 +30,7 @@ export { default } from './src/wallet-manager-evm.js'
 export { default as WalletAccountReadOnlyEvm } from './src/wallet-account-read-only-evm.js'
 
 export { default as WalletAccountEvm } from './src/wallet-account-evm.js'
+
+export { default as EvmSigner } from './src/signers/bare-seed-signer-evm.js'
+export { default as PrivateKeyEvmSigner } from './src/signers/bare-private-key-signer-evm.js'
+export { getDefaultBareSigner } from './src/bare-signer.js'
